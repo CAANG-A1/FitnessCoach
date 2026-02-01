@@ -19,7 +19,7 @@
             -webkit-appearance: none; 
             margin: 0; 
         }
-        /* Custom styling for the range slider to match the theme */
+        /* Custom styling for the range slider */
         .score-slider {
             -webkit-appearance: none;
             width: 100%;
@@ -85,6 +85,9 @@
         const TrendingUp = ({ size = 24, className = "" }) => (
             <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
         );
+        const Key = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.778-7.778Zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3y-3.5"/></svg>
+        );
 
         const App = () => {
             const [scoringData, setScoringData] = useState(null);
@@ -94,6 +97,7 @@
             const [aiPlan, setAiPlan] = useState(null);
             const [planDays, setPlanDays] = useState(90);
             const [targetScore, setTargetScore] = useState(90);
+            const [apiKey, setApiKey] = useState('');
 
             // Profile State
             const [profile, setProfile] = useState({ gender: 'male', ageGroup: '<25', height: 0, waist: 0 });
@@ -108,16 +112,14 @@
             useEffect(() => {
                 const loadData = async () => {
                     try {
-                        // Using robust URL resolution for fetch
                         const baseUrl = window.location.href.split('#')[0].split('?')[0];
                         const dataUrl = new URL('scoring-data.json', baseUrl).href;
-                        
                         const response = await fetch(dataUrl);
                         if (!response.ok) throw new Error(`HTTP ${response.status}`);
                         const data = await response.json();
                         setScoringData(data);
                     } catch (err) {
-                        setErrorMessage("Data Sync Error: Ensure 'scoring-data.json' is in the same folder as this file on GitHub.");
+                        setErrorMessage("Data Sync Error: Ensure 'scoring-data.json' is in the same folder as index.html on GitHub.");
                         console.error(err);
                     }
                 };
@@ -131,7 +133,6 @@
                 const userTable = scoringData.tables[profile.gender]?.[profile.ageGroup];
                 if (!userTable) return { total: 0, ratio: 0, cardioPts: 0, whtrPts: 0, strengthPts: 0, corePts: 0, cardioFail: false, status: 'Profile Error' };
 
-                // WHtR
                 const h = parseFloat(profile.height) || 1;
                 const w = parseFloat(profile.waist) || 0;
                 const ratio = parseFloat((w / h).toFixed(3));
@@ -140,7 +141,6 @@
                     for (const tier of scoringData.whtr) { if (ratio <= tier.max) { whtrPts = tier.pts; break; } }
                 }
 
-                // Cardio
                 let cardioPts = 0;
                 if (exercises.cardio === 'run') {
                     const runSec = (parseInt(scores.cardioMin, 10) || 0) * 60 + (parseInt(scores.cardioSec, 10) || 0);
@@ -154,7 +154,6 @@
                     }
                 }
 
-                // Strength
                 let strengthPts = 0;
                 const sTable = exercises.strength === 'pushups' ? userTable.strength.pushups : userTable.strength.handRelease;
                 const sVal = parseInt(exercises.strength === 'pushups' ? scores.strengthVal : scores.hrVal, 10) || 0;
@@ -162,7 +161,6 @@
                     for (const tier of sTable) { if (sVal >= tier.min) { strengthPts = tier.pts; break; } }
                 }
 
-                // Core
                 let corePts = 0;
                 if (exercises.core === 'situps') {
                     const cVal = parseInt(scores.coreVal, 10) || 0;
@@ -188,79 +186,70 @@
                 return { total: parseFloat(total.toFixed(1)), ratio, cardioPts, whtrPts, strengthPts, corePts, cardioFail, status };
             }, [profile, scores, exercises, scoringData]);
 
-            // --- AI Roadmap Generation ---
-            const callGeminiWithRetry = async (prompt, systemInstruction, retries = 0) => {
-                const apiKey = ""; 
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            // --- AI Roadmap Generation (Updated for GenAI.mil API) ---
+            const callMilAiWithRetry = async (prompt, systemInstruction, retries = 0) => {
+                const url = "https://api.genai.mil/v1/chat/completions";
                 
                 try {
                     const response = await fetch(url, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${apiKey}`
+                        },
                         body: JSON.stringify({
-                            contents: [{ parts: [{ text: prompt }] }],
-                            systemInstruction: { parts: [{ text: systemInstruction }] },
-                            generationConfig: { 
-                                responseMimeType: "application/json",
-                                responseSchema: {
-                                    type: "OBJECT",
-                                    properties: {
-                                        focus: { type: "string" },
-                                        nutrition: { type: "array", items: { type: "string" } },
-                                        phases: {
-                                            type: "array",
-                                            items: {
-                                                type: "OBJECT",
-                                                properties: {
-                                                    title: { type: "string" },
-                                                    description: { type: "string" },
-                                                    weeklyRoutine: {
-                                                        type: "OBJECT",
-                                                        properties: {
-                                                            Mon: { type: "string" }, Tue: { type: "string" }, Wed: { type: "string" },
-                                                            Thu: { type: "string" }, Fri: { type: "string" }, Sat: { type: "string" }, Sun: { type: "string" }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                    required: ["focus", "nutrition", "phases"]
-                                }
-                            }
+                            model: "gemini-2.5-pro",
+                            messages: [
+                                { role: "system", content: systemInstruction + " IMPORTANT: Output ONLY valid JSON in the requested format." },
+                                { role: "user", content: prompt }
+                            ],
+                            response_format: { type: "json_object" }
                         })
                     });
 
-                    if (!response.ok) throw new Error('API error');
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`API Error ${response.status}: ${errorText}`);
+                    }
+                    
                     const data = await response.json();
-                    return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
+                    const content = data.choices[0].message.content;
+                    return JSON.parse(content);
                 } catch (error) {
-                    if (retries < 5) {
+                    if (retries < 3) {
                         const delay = Math.pow(2, retries) * 1000;
                         await new Promise(res => setTimeout(res, delay));
-                        return callGeminiWithRetry(prompt, systemInstruction, retries + 1);
+                        return callMilAiWithRetry(prompt, systemInstruction, retries + 1);
                     }
                     throw error;
                 }
             };
 
             const generateAIPlan = async () => {
+                if (!apiKey) {
+                    setErrorMessage("API Key Required: Please enter your GenAI.mil STARK key below.");
+                    return;
+                }
+                
                 setLoadingPlan(true);
                 setErrorMessage('');
                 
-                const systemPrompt = `You are a fitness expert for the Air National Guard. Create a periodized training roadmap.
-                Weakest Link: ${results.cardioPts < 35 ? "Cardio" : "Strength"}. 
-                Goal: ${targetScore} total points in ${planDays} days. 
-                Return strictly structured JSON.`;
+                const systemPrompt = `You are an elite Human Performance Specialist for the CA Air National Guard. 
+                Generate a periodized training roadmap as a JSON object with the following keys:
+                - focus: (string) overall theme
+                - nutrition: (array of strings) 3 tactical tips
+                - phases: (array of 3 objects) Each phase has 'title', 'description', and 'weeklyRoutine' (object with Mon-Sun keys).
+                Target score is ${targetScore}.`;
 
-                const userPrompt = `I am a ${profile.gender} in the ${profile.ageGroup} bracket. Current score is ${results.total}/100. Target score is ${targetScore}. Timeframe: ${planDays} days. Current stats: Height ${profile.height}in, Waist ${profile.waist}in.`;
+                const userPrompt = `Member: ${profile.gender}, Age Group: ${profile.ageGroup}. Current composite score: ${results.total}/100. Cardio: ${results.cardioPts}, Strength: ${results.strengthPts}, Core: ${results.corePts}. Height: ${profile.height}in, Waist: ${profile.waist}in. Objective: Reach ${targetScore} points within ${planDays} days.`;
 
                 try {
-                    const plan = await callGeminiWithRetry(userPrompt, systemPrompt);
+                    const plan = await callMilAiWithRetry(userPrompt, systemPrompt);
                     setAiPlan(plan);
                     setActiveTab('plan');
                 } catch (e) {
-                    setErrorMessage("Coach synchronization failed. Check your connection.");
+                    setErrorMessage("GenAI.mil Hub sync failed. Please check your API Key and network connection.");
+                    console.error(e);
                 } finally {
                     setLoadingPlan(false);
                 }
@@ -277,7 +266,6 @@
 
             return (
                 <div className="min-h-screen pb-24">
-                    {/* Header */}
                     <header className="bg-[#003087] border-b-4 border-[#FFD700] sticky top-0 z-50 px-6 h-20 flex items-center justify-between shadow-lg">
                         <div className="flex items-center gap-4">
                             <div className="bg-white p-1.5 rounded-lg shadow-sm">
@@ -297,16 +285,15 @@
 
                     <main className="max-w-6xl mx-auto p-4 md:p-10 space-y-8">
                         {errorMessage && (
-                            <div className="bg-rose-50 border-2 border-rose-200 p-6 rounded-[2rem] flex items-center gap-4 text-rose-700 animate-pulse">
+                            <div className="bg-rose-50 border-2 border-rose-200 p-6 rounded-[2rem] flex items-center gap-4 text-rose-700">
                                 <AlertTriangle size={32} />
                                 <div>
-                                    <p className="font-black uppercase text-xs tracking-widest">Critical Connection Issue</p>
+                                    <p className="font-black uppercase text-xs tracking-widest">System Message</p>
                                     <p className="text-sm font-semibold opacity-80">{errorMessage}</p>
                                 </div>
                             </div>
                         )}
 
-                        {/* Navigation Tabs */}
                         <div className="grid grid-cols-2 bg-white rounded-2xl shadow-sm border border-slate-200 p-1.5 max-w-lg mx-auto">
                             <button onClick={() => setActiveTab('calc')} className={`flex items-center justify-center gap-2 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'calc' ? 'bg-[#003087] text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
                                 <Activity size={16} /> Score Tool
@@ -319,7 +306,6 @@
                         {activeTab === 'calc' ? (
                             <div className="grid lg:grid-cols-12 gap-8 items-start">
                                 <div className="lg:col-span-7 space-y-8">
-                                    {/* Profile Section */}
                                     <section className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
                                         <div className="px-8 py-5 border-b border-slate-50 flex items-center gap-3 bg-slate-50/30">
                                             <div className="w-1.5 h-5 bg-[#FFD700] rounded-full"></div>
@@ -351,14 +337,12 @@
                                         </div>
                                     </section>
 
-                                    {/* Component Inputs */}
                                     <section className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
                                         <div className="px-8 py-5 border-b border-slate-100 flex items-center gap-3 bg-slate-50/30">
                                             <div className="w-2 h-6 bg-[#003087] rounded-full"></div>
                                             <h2 className="text-xs font-black uppercase tracking-widest text-slate-700">2. Component results</h2>
                                         </div>
                                         <div className="p-8 space-y-10">
-                                            {/* Cardio Row */}
                                             <div className="space-y-5">
                                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                                     <div className="flex items-center gap-2 text-[#003087]">
@@ -420,7 +404,6 @@
                                     </section>
                                 </div>
 
-                                {/* Sidebar Scorecard */}
                                 <div className="lg:col-span-5 space-y-8 sticky top-24">
                                     <div className={`p-10 rounded-[3rem] text-white shadow-2xl relative overflow-hidden transition-all duration-700 ${results.status === 'Excellent' ? 'bg-[#10B981]' : results.status === 'Satisfactory' ? 'bg-[#003087]' : 'bg-[#EF4444]'}`}>
                                         <div className="absolute -top-12 -right-12 opacity-10"><Shield size={240} strokeWidth={1} /></div>
@@ -447,14 +430,21 @@
                                         </div>
                                     </div>
 
-                                    {/* Performance Roadmap Settings */}
                                     <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-8 text-center">
-                                        <div className="space-y-2">
-                                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-700">Performance Roadmap</h3>
-                                            <p className="text-xs text-slate-400 font-medium">Configure your training objectives</p>
+                                        <div className="space-y-2 text-left border-b border-slate-100 pb-4">
+                                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-700 flex items-center gap-2"><Key size={16} className="text-[#003087]" /> Setup GenAI.mil Key</h3>
+                                            <p className="text-[10px] text-slate-400 font-medium">Authentication required for roadmap generation</p>
+                                            <div className="mt-3">
+                                                <input 
+                                                    type="password" 
+                                                    placeholder="STARK XXXXX..." 
+                                                    value={apiKey}
+                                                    onChange={(e) => setApiKey(e.target.value)}
+                                                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-mono focus:ring-2 focus:ring-[#003087]/20 outline-none transition-all"
+                                                />
+                                            </div>
                                         </div>
-                                        
-                                        {/* Target Score Slider */}
+
                                         <div className="space-y-6 px-2">
                                             <div className="flex justify-between items-end">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Target Score</label>
@@ -485,7 +475,11 @@
                                             </div>
                                         </div>
 
-                                        <button onClick={generateAIPlan} disabled={loadingPlan} className="w-full bg-[#003087] text-white py-8 rounded-full font-black text-xs uppercase tracking-[0.4em] flex items-center justify-center gap-4 hover:shadow-2xl transition-all disabled:opacity-50">
+                                        <button 
+                                            onClick={generateAIPlan} 
+                                            disabled={loadingPlan} 
+                                            className={`w-full text-white py-8 rounded-full font-black text-xs uppercase tracking-[0.4em] flex items-center justify-center gap-4 hover:shadow-2xl transition-all disabled:opacity-50 ${!apiKey ? 'bg-slate-400 cursor-not-allowed' : 'bg-[#003087]'}`}
+                                        >
                                             {loadingPlan ? <Loader2 size={24} /> : <Zap size={24} className="fill-yellow-400 text-yellow-400" />} 
                                             Generate Roadmap
                                         </button>
@@ -493,7 +487,6 @@
                                 </div>
                             </div>
                         ) : (
-                            /* Roadmap Display */
                             <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in duration-1000">
                                 {!aiPlan ? (
                                     <div className="py-40 text-center border-4 border-dashed border-slate-200 rounded-[4rem] bg-white flex flex-col items-center">
@@ -543,7 +536,6 @@
                         )}
                     </main>
 
-                    {/* Footer */}
                     <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t-2 border-slate-200 py-4 text-center z-50 shadow-2xl">
                         <div className="flex items-center justify-center gap-8">
                             <p className="text-[9px] font-black uppercase tracking-[0.3em] flex items-center gap-2 text-slate-500"><CheckCircle2 size={14} className="text-emerald-500" /> Verified Scoring</p>
