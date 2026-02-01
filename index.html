@@ -19,6 +19,30 @@
             -webkit-appearance: none; 
             margin: 0; 
         }
+        /* Custom styling for the range slider to match the theme */
+        .score-slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #f1f5f9;
+            border-radius: 10px;
+            outline: none;
+        }
+        .score-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            background: #003087;
+            border: 4px solid #FFD700;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .score-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 10px rgba(0, 48, 135, 0.2);
+        }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -84,10 +108,12 @@
             useEffect(() => {
                 const loadData = async () => {
                     try {
-                        // Standard relative path for deployment
-                        // Using './' to ensure it resolutions relative to the current folder
-                        const response = await fetch('./scoring-data.json');
-                        if (!response.ok) throw new Error('Could not find scoring-data.json');
+                        // Using robust URL resolution for fetch
+                        const baseUrl = window.location.href.split('#')[0].split('?')[0];
+                        const dataUrl = new URL('scoring-data.json', baseUrl).href;
+                        
+                        const response = await fetch(dataUrl);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
                         const data = await response.json();
                         setScoringData(data);
                     } catch (err) {
@@ -227,7 +253,7 @@
                 Goal: ${targetScore} total points in ${planDays} days. 
                 Return strictly structured JSON.`;
 
-                const userPrompt = `I am a ${profile.gender} in the ${profile.ageGroup} bracket. Current score is ${results.total}/100. Target score is ${targetScore}. Timeframe: ${planDays} days.`;
+                const userPrompt = `I am a ${profile.gender} in the ${profile.ageGroup} bracket. Current score is ${results.total}/100. Target score is ${targetScore}. Timeframe: ${planDays} days. Current stats: Height ${profile.height}in, Waist ${profile.waist}in.`;
 
                 try {
                     const plan = await callGeminiWithRetry(userPrompt, systemPrompt);
@@ -358,7 +384,6 @@
                                             </div>
 
                                             <div className="grid sm:grid-cols-2 gap-8">
-                                                {/* Strength Column */}
                                                 <div className="space-y-4">
                                                     <div className="flex items-center justify-between">
                                                         <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Strength Component</span>
@@ -371,7 +396,6 @@
                                                         <span className="absolute bottom-3 left-0 right-0 text-center text-[8px] font-black text-slate-300 uppercase tracking-widest">Total Reps</span>
                                                     </div>
                                                 </div>
-                                                {/* Core Column */}
                                                 <div className="space-y-4">
                                                     <div className="flex items-center justify-between">
                                                         <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Core Stability</span>
@@ -423,18 +447,44 @@
                                         </div>
                                     </div>
 
-                                    {/* Plan Generator UI */}
+                                    {/* Performance Roadmap Settings */}
                                     <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-8 text-center">
                                         <div className="space-y-2">
                                             <h3 className="text-sm font-black uppercase tracking-widest text-slate-700">Performance Roadmap</h3>
-                                            <p className="text-xs text-slate-400 font-medium">Select timeframe to optimize readiness score</p>
+                                            <p className="text-xs text-slate-400 font-medium">Configure your training objectives</p>
                                         </div>
-                                        <div className="flex justify-center gap-3">
-                                            {[30, 60, 90, 180].map(d => (
-                                                <button key={d} onClick={() => setPlanDays(d)} className={`w-14 h-14 rounded-full text-[10px] font-black transition-all border-2 ${planDays === d ? 'bg-[#003087] text-white border-[#003087]' : 'border-slate-100 text-slate-400 hover:border-slate-200'}`}>{d}D</button>
-                                            ))}
+                                        
+                                        {/* Target Score Slider */}
+                                        <div className="space-y-6 px-2">
+                                            <div className="flex justify-between items-end">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Target Score</label>
+                                                <span className="text-3xl font-black text-[#003087] leading-none">{targetScore}</span>
+                                            </div>
+                                            <input 
+                                                type="range" 
+                                                min="75" 
+                                                max="100" 
+                                                step="1"
+                                                value={targetScore} 
+                                                onChange={(e) => setTargetScore(parseInt(e.target.value))}
+                                                className="score-slider"
+                                            />
+                                            <div className="flex justify-between text-[8px] font-black text-slate-300 uppercase tracking-tighter">
+                                                <span>Minimum Pass (75)</span>
+                                                <span>Excellence (90+)</span>
+                                                <span>Perfect (100)</span>
+                                            </div>
                                         </div>
-                                        {errorMessage && <p className="text-rose-500 text-[10px] font-bold uppercase">{errorMessage}</p>}
+
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block text-left ml-1">Training Duration</label>
+                                            <div className="flex justify-center gap-3">
+                                                {[30, 60, 90, 180].map(d => (
+                                                    <button key={d} onClick={() => setPlanDays(d)} className={`w-14 h-14 rounded-full text-[10px] font-black transition-all border-2 ${planDays === d ? 'bg-[#003087] text-white border-[#003087]' : 'border-slate-100 text-slate-400'}`}>{d}D</button>
+                                                ))}
+                                            </div>
+                                        </div>
+
                                         <button onClick={generateAIPlan} disabled={loadingPlan} className="w-full bg-[#003087] text-white py-8 rounded-full font-black text-xs uppercase tracking-[0.4em] flex items-center justify-center gap-4 hover:shadow-2xl transition-all disabled:opacity-50">
                                             {loadingPlan ? <Loader2 size={24} /> : <Zap size={24} className="fill-yellow-400 text-yellow-400" />} 
                                             Generate Roadmap
@@ -443,7 +493,7 @@
                                 </div>
                             </div>
                         ) : (
-                            /* Plan Result View */
+                            /* Roadmap Display */
                             <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in duration-1000">
                                 {!aiPlan ? (
                                     <div className="py-40 text-center border-4 border-dashed border-slate-200 rounded-[4rem] bg-white flex flex-col items-center">
@@ -457,7 +507,7 @@
                                             <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-10 border-b border-white/10 pb-12 mb-12">
                                                 <div>
                                                     <h2 className="text-6xl font-black mb-3 tracking-tighter text-[#FFD700]">{planDays}-Day Strategy</h2>
-                                                    <div className="inline-flex items-center gap-3 bg-white/10 px-6 py-2.5 rounded-full border border-white/10 font-black uppercase text-xs tracking-widest">Objective: {targetScore} Pts</div>
+                                                    <div className="inline-flex items-center gap-3 bg-white/10 px-6 py-2.5 rounded-full border border-white/10 font-black uppercase text-xs tracking-widest">Target Objective: {targetScore} Pts</div>
                                                 </div>
                                                 <div className="max-w-md md:text-right">
                                                     <p className="text-[#FFD700] font-black uppercase text-[10px] tracking-[0.4em] mb-3">Strategic Focus</p>
@@ -496,9 +546,9 @@
                     {/* Footer */}
                     <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t-2 border-slate-200 py-4 text-center z-50 shadow-2xl">
                         <div className="flex items-center justify-center gap-8">
-                            <p className="text-[9px] font-black uppercase tracking-[0.3em] flex items-center gap-2 text-slate-500"><CheckCircle2 size={14} className="text-emerald-500" /> USAF Scoring Engine</p>
+                            <p className="text-[9px] font-black uppercase tracking-[0.3em] flex items-center gap-2 text-slate-500"><CheckCircle2 size={14} className="text-emerald-500" /> Verified Scoring</p>
                             <div className="w-[1px] h-4 bg-slate-200"></div>
-                            <p className="text-[9px] font-black uppercase tracking-[0.3em] flex items-center gap-2 text-slate-500"><Shield size={14} className="text-[#003087]" /> Air Guard Readiness</p>
+                            <p className="text-[9px] font-black uppercase tracking-[0.3em] flex items-center gap-2 text-slate-500"><Shield size={14} className="text-[#003087]" /> Air Guard Ready</p>
                         </div>
                     </footer>
                 </div>
